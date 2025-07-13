@@ -53,7 +53,7 @@ Acest proiect este dedicat inginerilor și operatorilor de lumini care doresc s�
 
 ## Structura proiectului
 
-```
+```bash
 apcminimk2onyx/
 ├── controller/
 │   ├── apc_handler.py        # Gestionează pad-uri și butoane
