@@ -1,6 +1,7 @@
 from pythonosc import udp_client
 import time
 
+
 class OnyxOSCClient:
     def __init__(self, ip="10.0.0.100", port=8000):
         self.client = udp_client.SimpleUDPClient(ip, port)

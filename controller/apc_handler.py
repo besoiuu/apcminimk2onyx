@@ -7,12 +7,8 @@ import time
 # Inițializează clientul OSC pentru Onyx
 osc_client = OnyxOSCClient(ip="10.0.0.100", port=8000)
 
-COLOR_MAP = {
-    "off": 0,
-    "standby": 5,
-    "active": 48,
-    "flash": 1
-}
+COLOR_MAP = {"off": 0, "standby": 5, "active": 48, "flash": 1}
+
 
 def update_led(note, mode, midi_out_apc, is_pad=True):
     velocity = COLOR_MAP.get(mode, 0)
@@ -21,7 +17,10 @@ def update_led(note, mode, midi_out_apc, is_pad=True):
     elif not is_pad and 112 <= note <= 119:
         midi_out_apc.send_message([0x90, note, 1 if velocity > 0 else 0])
 
-def restore_red_leds_for_bank(midi_out_apc, banca_curenta, get_led_state, set_led_state, update_led_func):
+
+def restore_red_leds_for_bank(
+    midi_out_apc, banca_curenta, get_led_state, set_led_state, update_led_func
+):
     for note in range(64):
         mode = get_led_state(banca_curenta, note)
         if mode not in ("standby", "active"):
@@ -29,8 +28,15 @@ def restore_red_leds_for_bank(midi_out_apc, banca_curenta, get_led_state, set_le
             set_led_state(banca_curenta, note, mode)
         update_led_func(note, mode, midi_out_apc)
 
-def handle_pad_press(note, velocity, midi_out_apc, midi_out_onyx,
-                     shift_pressed=False, blackout_state=False):
+
+def handle_pad_press(
+    note,
+    velocity,
+    midi_out_apc,
+    midi_out_onyx,
+    shift_pressed=False,
+    blackout_state=False,
+):
     if velocity == 0:
         return
 
@@ -42,13 +48,17 @@ def handle_pad_press(note, velocity, midi_out_apc, midi_out_onyx,
     if note == BANK_DOWN_NOTE and velocity > 0:
         decrement_bank()
         osc_client.select_bank(banca_curenta)
-        restore_red_leds_for_bank(midi_out_apc, banca_curenta, get_led_state, set_led_state, update_led)
+        restore_red_leds_for_bank(
+            midi_out_apc, banca_curenta, get_led_state, set_led_state, update_led
+        )
         return
 
     if note == BANK_UP_NOTE and velocity > 0:
         increment_bank()
         osc_client.select_bank(banca_curenta)
-        restore_red_leds_for_bank(midi_out_apc, banca_curenta, get_led_state, set_led_state, update_led)
+        restore_red_leds_for_bank(
+            midi_out_apc, banca_curenta, get_led_state, set_led_state, update_led
+        )
         return
 
     if note == BLACKOUT_ON_NOTE and velocity > 0:
