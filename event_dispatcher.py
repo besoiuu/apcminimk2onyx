@@ -6,18 +6,30 @@ class EventDispatcher:
     def __init__(self, midi_out_apc, midi_out_onyx):
         self.midi_out_apc = midi_out_apc
         self.midi_out_onyx = midi_out_onyx
-        self.shift_pressed = False  # Poți adăuga gestiunea shift aici, dacă dorești
+        self.shift_pressed = False
         self.blackout_state = False
 
     def dispatch(self, message):
         status, note, velocity = message
-        print(f"[Dispatcher] Received message: status=0x{status:X}, note={note}, velocity={velocity}")
 
-        # Trimite evenimentul către handler-ul din apc_handler.py
+        SHIFT_NOTE = 0x7A  # 122
+        BLACKOUT_ON_NOTE = 118
+        BLACKOUT_OFF_NOTE = 119
+
+        if note == SHIFT_NOTE:
+            self.shift_pressed = velocity > 0
+
+        if note == BLACKOUT_ON_NOTE and velocity > 0:
+            self.blackout_state = True
+        elif note == BLACKOUT_OFF_NOTE and velocity > 0:
+            self.blackout_state = False
+
+        # Apelează handler-ul cu stările actualizate
         apc_handler.handle_pad_press(
             note,
             velocity,
             self.midi_out_apc,
-            self.midi_out_onyx
-            # Folosește funcțiile interne din apc_handler, fără alte modificări aici
+            self.midi_out_onyx,
+            shift_pressed=self.shift_pressed,
+            blackout_state=self.blackout_state
         )
