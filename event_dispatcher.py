@@ -40,6 +40,7 @@ class EventDispatcher:
                 self.keypad_handler.handle_button(note, velocity)
         else:
             if status == 0x90:
+                # Apelăm doar funcția care gestionează pad-urile, fără a interfera cu LED-urile
                 apc_handler.handle_pad_press(
                     note,
                     velocity,
