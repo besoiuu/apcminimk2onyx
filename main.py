@@ -1,25 +1,30 @@
+import time
 from midi.ports import setup_midi_ports
-from midi.listener import start_midi_listener
-from event_dispatcher import EventDispatcher  # importă clasa nouă
+from event_dispatcher import EventDispatcher
 
-if __name__ == "__main__":
-    print("🔌 Inițializare conexiuni MIDI...")
+def main():
+    print("🔌 Configurare porturi MIDI...")
     midi_in, midi_out_apc, midi_out_onyx = setup_midi_ports()
 
     dispatcher = EventDispatcher(midi_out_apc, midi_out_onyx)
 
-    def midi_callback(event, data=None):
-        message, _ = event
-        dispatcher.dispatch(message)
+    def midi_callback(message, data=None):
+        # message e de forma ([status, note, velocity], timestamp)
+        midi_message = message[0]
+        dispatcher.dispatch(midi_message)
 
     midi_in.set_callback(midi_callback)
 
-    print("🎧 Pornim ascultarea semnalelor MIDI...")
+    print("🎧 Ascultare mesaje MIDI. Apasă Ctrl+C pentru oprire.")
     try:
         while True:
-            pass  # Loop principal (poate fi extins ulterior)
+            time.sleep(0.1)
     except KeyboardInterrupt:
-        print("🛑 Oprire script...")
+        print("🛑 Închidere porturi MIDI...")
         midi_in.close_port()
         midi_out_apc.close_port()
         midi_out_onyx.close_port()
+        print("Program terminat.")
+
+if __name__ == "__main__":
+    main()
