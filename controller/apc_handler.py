@@ -1,12 +1,21 @@
 from controller.bank_manager import banca_curenta, increment_bank, decrement_bank
 from controller.led_memory import get_led_state, set_led_state
 from controller.onyx_handler import OnyxOSCClient
-
+from controller.mode_cycle import next_mode
 
 # Inițializează clientul OSC pentru Onyx
 osc_client = OnyxOSCClient(ip="10.0.0.100", port=8000)
 
-COLOR_MAP = {"off": 0, "standby": 5, "active": 48, "flash": 1}
+# Actualizăm COLOR_MAP pentru a reflecta corect culorile pentru Keyboard și Busk Mode
+COLOR_MAP = {
+    "off": 0,  # LED off
+    "standby": 5,  # Roșu pentru Busk Mode
+    "active": 48,  # Verde pentru Busk Mode și galben pentru Keyboard Mode
+    "flash": 1,  # Mov pentru Keyboard Mode
+    "yellow": 9,  # Galben pentru Keyboard Mode
+    "green": 48,  # Verde pentru Keyboard Mode
+}
+
 
 SHIFT_NOTE = 0x7A
 BLACKOUT_ON_NOTE = 118
@@ -60,23 +69,50 @@ def find_group_by_note(note):
 
 
 def update_led(note, mode, midi_out_apc, is_pad=True):
-    velocity = COLOR_MAP.get(mode, 0)
+    """
+    Trimite mesaj MIDI pentru a actualiza LED-ul.
+    """
+    velocity = COLOR_MAP.get(mode, 0)  # Obținem culoarea din COLOR_MAP
+
+    # Dacă este un pad și nota este între 0 și 63
     if is_pad and 0 <= note <= 63:
+        print(f"[DEBUG] Sending Note On for Pad: Note {note} with velocity {velocity}")
         midi_out_apc.send_message([0x90, note, velocity])
+
+    # Dacă este un buton și nota este între 112 și 119
     elif not is_pad and 112 <= note <= 119:
+        print(
+            f"[DEBUG] Sending Note On for Button: Note {note} with velocity {velocity}"
+        )
         midi_out_apc.send_message([0x90, note, 1 if velocity > 0 else 0])
 
 
-def restore_red_leds_for_bank(
-    midi_out_apc, banca_curenta, get_led_state, set_led_state, update_led_func
+def restore_leds_for_bank(
+    midi_out_apc,
+    banca_curenta,
+    get_led_state,
+    set_led_state,
+    update_led_func,
+    keyboard_mode=False,
 ):
     for physical_note in range(64):
         logical_note = physical_to_logical_note(physical_note)
-        mode = get_led_state(banca_curenta, logical_note)
-        if mode not in ("standby", "active"):
-            mode = "standby"
-            set_led_state(banca_curenta, logical_note, mode)
-        update_led_func(physical_note, mode, midi_out_apc)
+        # Obținem starea curentă a LED-ului
+        current_mode = get_led_state(banca_curenta, logical_note)
+
+        # Dacă starea curentă nu este activă sau standby, setăm la standby
+        if current_mode not in ("standby", "active"):
+            if keyboard_mode:
+                # Dacă suntem în Keyboard Mode, setăm LED-ul la galben pentru "active" sau mov pentru "flash"
+                current_mode = "yellow"  # Începe cu galben în Keyboard Mode
+            else:
+                # În Busk Mode, setăm LED-ul la verde pentru "active" sau roșu pentru "standby"
+                current_mode = "green"  # Setează verde pentru Busk Mode, de exemplu
+
+            set_led_state(banca_curenta, logical_note, current_mode)
+
+        # Actualizăm LED-ul folosind culorile corecte
+        update_led_func(physical_note, current_mode, midi_out_apc, is_pad=True)
 
 
 def handle_pad_press(
@@ -86,6 +122,7 @@ def handle_pad_press(
     midi_out_onyx,
     shift_pressed=False,
     blackout_state=False,
+    keyboard_mode=False,
 ):
     if velocity == 0:
         # Ignoră note off, ca să nu faci dublă procesare
@@ -95,8 +132,13 @@ def handle_pad_press(
     if note == BANK_DOWN_NOTE:
         decrement_bank()
         osc_client.select_bank(banca_curenta)
-        restore_red_leds_for_bank(
-            midi_out_apc, banca_curenta, get_led_state, set_led_state, update_led
+        restore_leds_for_bank(
+            midi_out_apc,
+            banca_curenta,
+            get_led_state,
+            set_led_state,
+            update_led,
+            keyboard_mode,
         )
         print(f"Bank decremented: {banca_curenta}")
         return
@@ -104,8 +146,13 @@ def handle_pad_press(
     if note == BANK_UP_NOTE:
         increment_bank()
         osc_client.select_bank(banca_curenta)
-        restore_red_leds_for_bank(
-            midi_out_apc, banca_curenta, get_led_state, set_led_state, update_led
+        restore_leds_for_bank(
+            midi_out_apc,
+            banca_curenta,
+            get_led_state,
+            set_led_state,
+            update_led,
+            keyboard_mode,
         )
         print(f"Bank incremented: {banca_curenta}")
         return
@@ -141,12 +188,11 @@ def handle_pad_press(
         # Citește starea curentă a padului (active/standby)
         current_mode = get_led_state(banca_curenta, note_real)
 
+        # Schimbăm LED-ul între active și standby
         if current_mode == "active":
-            # Dacă e deja activ, trimite release și setează standby
             osc_action = "release"
             next_mode = "standby"
         else:
-            # Dacă e standby sau off, trimite go și setează active
             osc_action = "go"
             next_mode = "active"
 

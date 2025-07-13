@@ -93,8 +93,8 @@ class KeypadHandler:
         print(f"[KeypadHandler] Trimit OSC {osc_address} cu valoarea {state}")
         self.osc_client.client.send_message(osc_address, state)
 
-        # Actualizează LED
-        led_address = f"/Mx/button/{osc_id}/led"
-        self.osc_client.client.send_message(led_address, state)
+        # # Actualizează LED
+        # led_address = f"/Mx/button/{osc_id}/led"
+        # self.osc_client.client.send_message(led_address, state)
 
         print(f"[KeypadHandler] {btn_name} ({midi_note} inversat: {midi_note_inverted}) - {'pressed' if state else 'released'}")
