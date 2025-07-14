@@ -1,21 +1,8 @@
 from controller.bank_manager import banca_curenta, increment_bank, decrement_bank
-from controller.led_memory import get_led_state, set_led_state
+from controller.led_memory import get_led_state, set_led_state, update_led
 from controller.onyx_handler import OnyxOSCClient
-from controller.mode_cycle import next_mode
 
-# Inițializează clientul OSC pentru Onyx
 osc_client = OnyxOSCClient(ip="10.0.0.100", port=8000)
-
-# Actualizăm COLOR_MAP pentru a reflecta corect culorile pentru Keyboard și Busk Mode
-COLOR_MAP = {
-    "off": 0,  # LED off
-    "standby": 5,  # Roșu pentru Busk Mode
-    "active": 48,  # Verde pentru Busk Mode și galben pentru Keyboard Mode
-    "flash": 1,  # Mov pentru Keyboard Mode
-    "yellow": 9,  # Galben pentru Keyboard Mode
-    "green": 48,  # Verde pentru Keyboard Mode
-}
-
 
 SHIFT_NOTE = 0x7A
 BLACKOUT_ON_NOTE = 118
@@ -23,96 +10,16 @@ BLACKOUT_OFF_NOTE = 119
 BANK_UP_NOTE = 0x75
 BANK_DOWN_NOTE = 0x74
 
-
-class PadColumnGroup:
-    def __init__(self, name, pad_notes, softkey_note, fader_cc):
-        self.name = name
-        self.pad_notes = pad_notes  # Lista note fizice (0x00–0x3F)
-        self.softkey_note = softkey_note  # Nota softkey TrackButton
-        self.fader_cc = fader_cc  # CC MIDI pentru faderul aferent
+busk_led_state = {}  # note: state ("off", "green", "red")
 
 
-def generate_pad_column_inverted_row(col_index):
-    # Generează lista de note fizice pentru o coloană inversând rândurile
-    return [(7 - row) * 8 + col_index for row in range(8)]
-
-
-pad_column_groups = [
-    PadColumnGroup("Coloana 1", generate_pad_column_inverted_row(0), 0x64, 48),
-    PadColumnGroup("Coloana 2", generate_pad_column_inverted_row(1), 0x65, 49),
-    PadColumnGroup("Coloana 3", generate_pad_column_inverted_row(2), 0x66, 50),
-    PadColumnGroup("Coloana 4", generate_pad_column_inverted_row(3), 0x67, 51),
-    PadColumnGroup("Coloana 5", generate_pad_column_inverted_row(4), 0x68, 52),
-    PadColumnGroup("Coloana 6", generate_pad_column_inverted_row(5), 0x69, 53),
-    PadColumnGroup("Coloana 7", generate_pad_column_inverted_row(6), 0x6A, 54),
-    PadColumnGroup("Coloana 8", generate_pad_column_inverted_row(7), 0x6B, 55),
-    PadColumnGroup(
-        "Scene Launch", [0x70, 0x71, 0x72, 0x73, 0x74, 0x75, 0x76, 0x77], None, 56
-    ),
-]
-
-
-def physical_to_logical_note(physical_note):
-    # Conversie nota fizică MIDI (0..63) la nota logică 1..64 cu rândurile inversate
-    col = physical_note % 8
-    row = physical_note // 8
-    inverted_row = 7 - row
-    logical_note = inverted_row * 8 + col + 1  # +1 pentru numerotare 1-based
-    return logical_note
-
-
-def find_group_by_note(note):
-    for group in pad_column_groups:
-        if note in group.pad_notes or note == group.softkey_note:
-            return group
-    return None
-
-
-def update_led(note, mode, midi_out_apc, is_pad=True):
+def clear_busk_grid(midi_out_apc):
     """
-    Trimite mesaj MIDI pentru a actualiza LED-ul.
+    Stinge toate pad-urile din grid (0-63) la intrarea/ieșirea din BUSK.
     """
-    velocity = COLOR_MAP.get(mode, 0)  # Obținem culoarea din COLOR_MAP
-
-    # Dacă este un pad și nota este între 0 și 63
-    if is_pad and 0 <= note <= 63:
-        print(f"[DEBUG] Sending Note On for Pad: Note {note} with velocity {velocity}")
-        midi_out_apc.send_message([0x90, note, velocity])
-
-    # Dacă este un buton și nota este între 112 și 119
-    elif not is_pad and 112 <= note <= 119:
-        print(
-            f"[DEBUG] Sending Note On for Button: Note {note} with velocity {velocity}"
-        )
-        midi_out_apc.send_message([0x90, note, 1 if velocity > 0 else 0])
-
-
-def restore_leds_for_bank(
-    midi_out_apc,
-    banca_curenta,
-    get_led_state,
-    set_led_state,
-    update_led_func,
-    keyboard_mode=False,
-):
-    for physical_note in range(64):
-        logical_note = physical_to_logical_note(physical_note)
-        # Obținem starea curentă a LED-ului
-        current_mode = get_led_state(banca_curenta, logical_note)
-
-        # Dacă starea curentă nu este activă sau standby, setăm la standby
-        if current_mode not in ("standby", "active"):
-            if keyboard_mode:
-                # Dacă suntem în Keyboard Mode, setăm LED-ul la galben pentru "active" sau mov pentru "flash"
-                current_mode = "yellow"  # Începe cu galben în Keyboard Mode
-            else:
-                # În Busk Mode, setăm LED-ul la verde pentru "active" sau roșu pentru "standby"
-                current_mode = "green"  # Setează verde pentru Busk Mode, de exemplu
-
-            set_led_state(banca_curenta, logical_note, current_mode)
-
-        # Actualizăm LED-ul folosind culorile corecte
-        update_led_func(physical_note, current_mode, midi_out_apc, is_pad=True)
+    for pad in range(64):
+        busk_led_state[pad] = "off"
+        update_led(pad, "off", midi_out_apc)
 
 
 def handle_pad_press(
@@ -122,118 +29,90 @@ def handle_pad_press(
     midi_out_onyx,
     shift_pressed=False,
     blackout_state=False,
-    keyboard_mode=False,
 ):
+    """
+    BUSK mode: Toggle verde/roșu pe grid 0-63. Restul butoanelor gestionează separat.
+    """
     if velocity == 0:
-        # Ignoră note off, ca să nu faci dublă procesare
         return
 
-    # Butoane speciale pentru schimbare bancă
+    # ======== Funcții speciale ========
     if note == BANK_DOWN_NOTE:
         decrement_bank()
         osc_client.select_bank(banca_curenta)
-        restore_leds_for_bank(
-            midi_out_apc,
-            banca_curenta,
-            get_led_state,
-            set_led_state,
-            update_led,
-            keyboard_mode,
-        )
-        print(f"Bank decremented: {banca_curenta}")
+        clear_busk_grid(midi_out_apc)
+        print(f"🔻 Bank - noua bancă: {banca_curenta}")
         return
 
     if note == BANK_UP_NOTE:
         increment_bank()
         osc_client.select_bank(banca_curenta)
-        restore_leds_for_bank(
-            midi_out_apc,
-            banca_curenta,
-            get_led_state,
-            set_led_state,
-            update_led,
-            keyboard_mode,
-        )
-        print(f"Bank incremented: {banca_curenta}")
+        clear_busk_grid(midi_out_apc)
+        print(f"🔺 Bank + noua bancă: {banca_curenta}")
         return
 
-    # Blackout ON/OFF
     if note == BLACKOUT_ON_NOTE:
         osc_client.blackout(True)
+        print("🕶️ Blackout ON")
         update_led(BLACKOUT_ON_NOTE, "red", midi_out_apc, is_pad=False)
-        print("Blackout ON")
         return
 
     if note == BLACKOUT_OFF_NOTE:
         osc_client.blackout(False)
+        print("🕶️ Blackout OFF")
         update_led(BLACKOUT_ON_NOTE, "off", midi_out_apc, is_pad=False)
-        print("Blackout OFF")
         return
 
     if note == SHIFT_NOTE:
-        return  # Shift gestionat separat
-
-    group = find_group_by_note(note)
-    if group is None:
-        print(f"Nota necunoscută: {note}")
         return
 
+    # ======== BUSK GRID TOGGLE (doar pentru pad-uri 0–63) =====
     if 0 <= note <= 63:
-        logical_note = physical_to_logical_note(note)
-        note_real = logical_note + (banca_curenta * 64)
-
-        page_index = banca_curenta + 1
-        button_index = logical_note - 1  # zero-based
-
-        # Citește starea curentă a padului (active/standby)
-        current_mode = get_led_state(banca_curenta, note_real)
-
-        # Schimbăm LED-ul între active și standby
-        if current_mode == "active":
-            osc_action = "release"
-            next_mode = "standby"
-        else:
+        cur = busk_led_state.get(note, "off")
+        if cur in ("off", "red"):
+            new = "green"
             osc_action = "go"
-            next_mode = "active"
+        else:
+            new = "red"
+            osc_action = "release"
 
+        busk_led_state[note] = new
+        update_led(note, new, midi_out_apc)
+
+        # OSC logic identic cu ce aveai:
+        col = note % 8
+        row = note // 8
+        logical_note = (7 - row) * 8 + col + 1
+        note_real = logical_note + (banca_curenta * 64)
+        page_index = banca_curenta + 1
+        button_index = logical_note - 1
         osc_client.client.send_message(
             f"/Mx/playback/page{page_index}/{button_index}/{osc_action}", 1
         )
+        midi_out_onyx.send_message([0x90, note_real - 1, velocity])
 
-        set_led_state(banca_curenta, note_real, next_mode)
-        update_led(note, next_mode, midi_out_apc, is_pad=True)
-        midi_out_onyx.send_message([0x90, note_real - 1, velocity])  # Onyx e 0-based
-
-        print(
-            f"[{group.name}] Pad fizic {note} -> logic {logical_note}, OSC: page {page_index} button {button_index} {osc_action}"
-        )
+        # print(f"[BUSK] Pad {note}: {cur} -> {new} (LED), OSC: page{page_index} btn{button_index} {osc_action}")
         return
 
-    # Similar pentru softkey TrackButton și Scene Launch - doar toggle la apăsare:
-    if group.softkey_note is not None and note == group.softkey_note:
-        current_mode = get_led_state(banca_curenta, note)
-        next_mode = "standby" if current_mode == "active" else "active"
-        update_led(note, next_mode, midi_out_apc, is_pad=False)
-        set_led_state(banca_curenta, note, next_mode)
-        print(
-            f"[{group.name}] Softkey TrackButton {note}: {current_mode} -> {next_mode}"
-        )
+    # ======== Track/Scene Buttons (optional, pentru restul butoanelor) ========
+    # Dacă vrei ca Track Buttons (0x64–0x6B) și Scene Launch (0x70–0x77) să fie roșii sau verzi, gestionezi aici separat.
+    # Exemplu:
+    if 0x64 <= note <= 0x6B:
+        # Track buttons: roșu ON
+        update_led(note, "red", midi_out_apc, is_pad=False)
         return
-
-    if group.name == "Scene Launch" and note in group.pad_notes:
-        current_mode = get_led_state(banca_curenta, note)
-        next_mode = "standby" if current_mode == "active" else "active"
-        update_led(note, next_mode, midi_out_apc, is_pad=False)
-        set_led_state(banca_curenta, note, next_mode)
-        print(f"[Scene Launch] Button {note}: {current_mode} -> {next_mode}")
+    if 0x70 <= note <= 0x77:
+        # Scene buttons: verde ON
+        update_led(note, "green", midi_out_apc, is_pad=False)
         return
 
 
 def handle_fader_message(cc, value, midi_out_onyx, osc_client):
+    """
+    Gestionează mișcarea unui fader: trimite nivelul corespunzător către Onyx.
+    """
     if 48 <= cc <= 56:
         scaled_level = int(value * 255 / 127)
         playback_id = cc - 47
-        print(
-            f"Fader CC {cc} poziție: {value} scaled to {scaled_level}, playback_id: {playback_id}"
-        )
         osc_client.set_playback_fader(playback_id=playback_id, level=scaled_level)
+        # print(f"[FADER] CC {cc} → poziție {value}, scalat: {scaled_level}, playback: {playback_id}")
