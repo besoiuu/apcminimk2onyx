@@ -1,132 +1,176 @@
-# apcminimk2onyx
+# APC MINI MK2 ➔ ONYX OSC MIDI Bridge
 
-Integrare completă între controller-ul MIDI **Akai APC Mini MK2** și software-ul de control lumini **Obsidian Onyx** folosind protocoale MIDI și OSC.
-
----
-
-## Descriere
-
-Acest proiect este dedicat inginerilor și operatorilor de lumini care doresc să folosească Akai APC Mini MK2 ca interfață hardware pentru controlul direct al consolei de lumini Obsidian Onyx. Prin interpretarea mesajelor MIDI de la controller și trimiterea lor în format OSC către Onyx, proiectul permite controlul în timp real al fadere-lor, pad-urilor, butoanelor speciale (blackout, schimbare bancă), precum și feedback vizual pe controller prin LED-uri.
+**Full control and visual feedback for Obsidian Onyx using the Akai APC Mini MK2**  
+Python-based integration: fast setup, robust features, custom mapping!
 
 ---
 
-## Funcționalități implementate
+## Table of Contents
 
-### 1. Gestionare completă a mesajelor MIDI de la Akai APC Mini MK2
-
-- Recepționarea și interpretarea mesajelor **Note On/Off** pentru pad-uri și butoane
-- Recepționarea și interpretarea mesajelor **Control Change (CC)** pentru fadere (CC 48-56 corespunzător fadere 1-9)
-
-### 2. Control feedback LED pe controller
-
-- Actualizarea LED-urilor pad-urilor în funcție de starea lor internă (standby, activ, flash)
-- Control simplu al LED-urilor butoanelor speciale (ex. blackout ON/OFF)
-- Sincronizarea LED-urilor cu schimbările de bancă și stările fade-lor
-
-### 3. Control OSC către Obsidian Onyx
-
-- Trimiterea mesajelor OSC conform protocolului oficial Onyx pentru:
-  - Setarea nivelului fadere-lor (`/Mx/fader/<id>`) cu valori scalate 0-255
-  - Activarea/dezactivarea blackout-ului (`/Mx/fader/2202`)
-  - Schimbarea bancilor de playback prin comenzi `/Mx/button/442x/up/down`
-
-### 4. Schimbare dinamică a bancilor pe controller și pe Onyx
-
-- Butoane dedicate pentru incrementarea/decrementarea bancilor pe controller
-- Actualizarea corespunzătoare a feedback-ului vizual și a OSC-ului pentru bancă
-
-### 5. Mod Shift și alte funcții speciale
-
-- Implementarea unui buton Shift pentru extinderea funcționalităților
-- Gestionarea stării blackout prin două butoane dedicate
-- Alte facilități de management intern al stării
-
-### 6. Structură modulară și clară a codului
-
-- `onyx_handler.py` — clasa pentru comunicare OSC către Onyx
-- `fader_handler.py` — handler pentru fadere
-- `apc_handler.py` — handler pentru pad-uri, butoane și funcții speciale
-- `event_dispatcher.py` — dispatcher-ul mesajelor MIDI către handler-ele corespunzătoare
-- `main.py` — scriptul principal pentru inițializarea porturilor și pornirea ascultării MIDI
+- [Description](#description)
+- [Requirements & Installation](#requirements--installation)
+- [loopMIDI Setup](#loopmidi-setup)
+- [Operating Modes](#operating-modes)
+  - [BUSK Mode](#busk-mode)
+  - [KEYBOARD Mode](#keyboard-mode)
+- [Main Features](#main-features)
+- [Pad & Button Mapping](#pad--button-mapping)
+- [LED Feedback & Colors](#led-feedback--colors)
+- [Special Commands](#special-commands)
+- [Troubleshooting](#troubleshooting)
+- [Extending & Customizing](#extending--customizing)
+- [Contact](#contact)
 
 ---
 
-## Structura proiectului
+## Description
 
-```bash
-apcminimk2onyx/
-├── controller/
-│   ├── apc_handler.py        # Gestionează logica de procesare a pad-urilor și butoanelor de pe controller-ul Akai APC Mini MK2.
-│   ├── fader_handler.py      # Gestionează interpretarea mesajelor MIDI CC pentru fadere și transmiterea valorilor către Obsidian Onyx.
-│   ├── onyx_handler.py       # Implementarea clasei client OSC pentru comunicarea și controlul consolei Obsidian Onyx.
-│   ├── bank_manager.py       # Gestionarea internă a stării și schimbărilor bancilor de playback (incrementare, decrementare, starea curentă).
-│   ├── led_memory.py         # Stocarea și gestionarea stărilor LED-urilor de pe controller pentru sincronizarea feedback-ului vizual.
-│   ├── mode_cycle.py         # Logica pentru ciclul și modificarea modurilor LED-urilor, inclusiv animații sau schimbări de stare ciclice.
-├── midi/
-│   ├── listener.py           # Clasa responsabilă pentru ascultarea porturilor MIDI și recepționarea mesajelor hardware.
-│   ├── ports.py              # Configurarea și managementul porturilor MIDI de input și output utilizate în aplicație.
-├── event_dispatcher.py       # Dispatcher-ul principal care primește mesajele MIDI și le direcționează către handler-ele corespunzătoare (pad-uri, fadere).
-├── main.py                   # Scriptul principal de inițializare și rulare a aplicației, configurează porturile MIDI și pornește ascultarea.
-├── requirements.txt          # Lista dependențelor Python necesare pentru rularea corectă a proiectului.
-└── README.md                 # Documentația proiectului, descriere, instrucțiuni de instalare și utilizare.
-
-```
+This project enables **fast, colorful, and physical control** over Obsidian ONYX using the Akai APC Mini MK2 controller.  
+It provides synchronized RGB feedback, mode switching, detailed OSC mapping, quick commands, blackout, bank switching, and full hardware fader support.
 
 ---
 
-## Instalare
+## Requirements & Installation
 
-1. Clonează repository-ul:
+- **Windows 10/11** or Linux/Mac with Python 3.8+
+- **Akai APC mini mk2** (only mk2 version!)
+- **Obsidian ONYX** or any OSC/MIDI compatible software
+- **loopMIDI** (Windows) or an equivalent (IAC, qjackctl) on Mac/Linux
+- **python-rtmidi**, **python-osc** and all dependencies from `requirements.txt`
 
-```bash
-git clone https://github.com/besoiuu/apcminimk2onyx.git
-cd apcminimk2onyx
-```
+### Quick Install
 
-2. Instalează dependențele:
+1. Clone this repo or copy the source files.
+2. Install Python dependencies:
+    ```bash
+    pip install -r requirements.txt
+    ```
+3. Install and launch **loopMIDI** (see below).
+4. Connect your Akai APC Mini mk2 to your computer.
 
 ---
 
-```bash
-pip install -r requirements.txt
-```
+## loopMIDI Setup
 
-3. Configurează porturile MIDI în main.py conform configurației sistemului tău (listă porturi MIDI disponibile).
+1. Install [loopMIDI](https://www.tobias-erichsen.de/software/loopmidi.html) (free, Windows).
+2. Create **two virtual ports**:
+   - `To Onyx` (Output for OSC/MIDI OUT to Onyx)
+   - `From Onyx` (Input if you want to receive signals back – optional)
+3. In Onyx:  
+   - Set up MIDI Input/Output to these ports.
+   - Enable OSC, configure IP and port 8000 (default).
+4. In the Python script, select the correct APC MINI IN, OUT, and Onyx ports at startup.
 
-4. Asigură-te că IP-ul și portul pentru OnyxOSCClient corespund setărilor Onyx-ului tău (implicit 10.0.0.100:8000).
+---
 
-## Utilizare
+## Operating Modes
 
-Rulează scriptul principal:
+### FADER MODE (FADERS 1-9 are usable)
+ 
+- **Faders can work in either mode**
+- **USE PLAYBACK SWAP**
 
-```bash
-python main.py
-```
+### BUSK Mode (classic grid mode)
+- **Default at startup** (or after exiting Keyboard Mode)
+- **Visual Feedback:**
+    - Grid pads are **off by default**
+    - Press pad: **green**
+    - Press again: **red**
+    - Toggle green/red for GO/RELEASE on playback
+- **Track Buttons:** red ON
+- **Scene Launch Buttons:** green ON
 
-## Cerințe
+- **REMEMBER THAT IN THIS MODE PADS ARE AVAILABLE FOR A 8X8 LAYOUT OF A PLAYBACK BUTTON PAGE**
+- **REMEMBER THAT IN THIS MODE PADS ARE AVAILABLE FOR A 8X8 LAYOUT OF A PLAYBACK BUTTON PAGE**
+- **REMEMBER THAT IN THIS MODE PADS ARE AVAILABLE FOR A 8X8 LAYOUT OF A PLAYBACK BUTTON PAGE**
 
-Python 3.7+
+### KEYBOARD Mode (keypad/command mode)
+- **Activate with:** `SHIFT` (Scene Launch 7) + `Scene Launch 1` (top left)
+- **Visual Feedback:**
+    - All grid pads **blue** by default
+    - Pads with OSC mapping (see `keypad_handler.py`): **yellow (amber)**
+    - Press mapped OSC button: **green ONHOLD**, returns to amber when released
 
-python-rtmidi
+---
 
-python-osc
+## Main Features
 
-Controller Akai APC Mini MK2 conectat la PC
+- **Full RGB LED feedback** on pads (blue, green, red, yellow, etc.)
+- **OSC** sync with Onyx for fast commands (GO, RELEASE, blackout, bank select)
+- **Bank Up/Down support:** quickly switch playback pages
+- **Hardware fader support:** instant OSC values when moved
+- **Blackout hardware button:** toggle directly from the controller
+- **Easy mapping customization** (`keypad_handler.py`)
+- **Clear debug/log messages** in the terminal
 
-Obsidian Onyx configurat pentru a primi mesaje OSC pe portul configurat
+---
 
-## Dezvoltare și contribuții
+## Pad & Button Mapping
 
-Codul este structurat modular pentru a facilita extinderea și modificarea
+- **8x8 Grid:** Notes 0–63, standard AKAI numbering (rows/columns are inverted for the physical layout)
+- **Track Buttons (0x64–0x6B):** red, can be customized
+- **Scene Launch (0x70–0x77):** green, used for mode switch, shift, etc.
+- **SHIFT:** `0x7A` (Scene Launch 7)
+- **BANK UP/DOWN:** `0x75/0x74` (Scene Launch 6/5)
+- **Blackout:** Notes 118/119
 
-Sunt binevenite sugestiile și pull request-urile pentru adăugarea de funcționalități noi sau corectarea bug-urilor
+See `keypad-map.txt` for the full OSC (KEYBOARD) mapping.
 
-Pentru orice problemă deschide un issue în repository
+---
 
-## Autor
+## LED Feedback & Colors
 
-besoiuu
+Colors are set according to AKAI velocity values, see details in `led_memory.py` and the official documentation.  
+**Examples:**
+- `"green"` (velocity 0x21 or 33) – bright green
+- `"red"` (velocity 0x05)
+- `"amber"` (velocity 0x09) – yellow/orange
+- `"blue"` (velocity 0x29) – standard blue
 
-## Licență
+- **Grid pads:** 0x96 (channel 6), RGB color
+- **Track/scene buttons:** 0x90 (channel 0), on/off (green/red)
 
-MIT License
+---
+
+## Special Commands
+
+- **SHIFT + Scene Launch 1:** toggle Keyboard Mode
+- **SHIFT:** also used for other custom functions (you can extend this)
+- **BANK UP/DOWN:** switch playback pages
+- **Blackout:** turns all lights on/off in Onyx
+
+---
+
+## Troubleshooting
+
+- **Controller not found?**  
+  - Check that the correct port is selected at script startup.
+  - Close Ableton/other DAWs that might block the APC.
+- **LEDs not lighting up?**  
+  - Make sure you selected the correct OUT port to APC mini mk2 at startup.
+- **OSC not working?**  
+  - Double-check the IP/port for Onyx (default 8000) and ensure Onyx is listening on that port.
+- **Faders not working?**  
+  - Verify the correct MIDI ports are selected for Onyx.
+- **loopMIDI not transmitting?**  
+  - Check connection and correct assignment in Onyx and the script.
+
+---
+
+## Extending & Customizing
+
+- You can modify OSC mapping in `keypad_handler.py`
+- Add new modes or custom color schemes in `led_memory.py`
+- For advanced feedback (e.g., feedback from Onyx to controller), consult the Onyx OSC documentation
+- You can quickly adjust pad behavior to fit your specific project
+
+---
+
+## Contact
+
+Script and documentation by [besoiuuworks].  
+For support, questions, or collaboration: [patrickardelean1@gmail.com].
+
+---
+
+Happy programming & enjoy your show!
