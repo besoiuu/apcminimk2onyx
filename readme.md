@@ -9,7 +9,7 @@ Python-based integration: fast setup, robust features, custom mapping!
 
 - [Description](#description)
 - [Requirements & Installation](#requirements--installation)
-- [loopMIDI Setup](#loopmidi-setup)
+- [loopMIDI & Loopback OSC Setup](#loopmidi--loopback-osc-setup)
 - [Operating Modes](#operating-modes)
   - [BUSK Mode](#busk-mode)
   - [KEYBOARD Mode](#keyboard-mode)
@@ -34,7 +34,7 @@ It provides synchronized RGB feedback, mode switching, detailed OSC mapping, qui
 
 - **Windows 10/11** or Linux/Mac with Python 3.8+
 - **Akai APC mini mk2** (only mk2 version!)
-- **Obsidian ONYX** or any OSC/MIDI compatible software
+- **Obsidian ONYX**
 - **loopMIDI** (Windows) or an equivalent (IAC, qjackctl) on Mac/Linux
 - **python-rtmidi**, **python-osc** and all dependencies from `requirements.txt`
 
@@ -45,28 +45,46 @@ It provides synchronized RGB feedback, mode switching, detailed OSC mapping, qui
     ```bash
     pip install -r requirements.txt
     ```
-3. Install and launch **loopMIDI** (see below).
+3. Set up **loopMIDI** and the OSC loopback network adapter (see next section!)
 4. Connect your Akai APC Mini mk2 to your computer.
 
 ---
 
-## loopMIDI Setup
+## loopMIDI & Loopback OSC Setup
+
+> **⚠️ OSC Loopback Requirement:**  
+> For this script to communicate with ONYX on Windows, you must install a loopback network adapter and set IP **`10.0.0.100`** for OSC.  
+> ONYX will **not** accept `127.0.0.1` (“localhost”).  
+> See instructions below.
+
+### loopMIDI Steps
 
 1. Install [loopMIDI](https://www.tobias-erichsen.de/software/loopmidi.html) (free, Windows).
-2. Create **two virtual ports**:
-   - `To Onyx` (Output for OSC/MIDI OUT to Onyx)
-   - `From Onyx` (Input if you want to receive signals back – optional)
-3. In Onyx:  
-   - Set up MIDI Input/Output to these ports.
-   - Enable OSC, configure IP and port 8000 (default).
-4. In the Python script, select the correct APC MINI IN, OUT, and Onyx ports at startup.
+2. Create two virtual MIDI ports:
+   - `To Onyx` (output from Python script to Onyx)
+   - `From Onyx` (optional: for feedback, not required for basic operation)
+3. In ONYX, assign these for MIDI IN/OUT.
+
+### OSC Loopback IP Setup
+
+**Without this, OSC will not work!**
+
+1. Open Device Manager → **Add legacy hardware** → **Microsoft KM-TEST Loopback Adapter**
+2. In Network Connections, right-click the new adapter, go to “Properties”, set IPv4 to **`10.0.0.100`** (`255.255.255.0`)
+3. In ONYX, go to **Settings > OSC**:
+   - Set OSC IP address: **`10.0.0.100`**
+   - Set OSC port: **8000** (default in this script)
+4. The Python script is preconfigured for this OSC endpoint.
+5. At script startup, select the correct **APC MINI IN, OUT, and Onyx** ports.
+
+> If you skip this step, OSC playback, fader, and blackout commands **will NOT work**!
 
 ---
 
 ## Operating Modes
 
-### FADER MODE (FADERS 1-9 are usable)
- 
+### FADER MODE (FADERS 1-9 usable)
+
 - **Faders can work in either mode**
 - **USE PLAYBACK SWAP**
 
@@ -80,9 +98,7 @@ It provides synchronized RGB feedback, mode switching, detailed OSC mapping, qui
 - **Track Buttons:** red ON
 - **Scene Launch Buttons:** green ON
 
-- **REMEMBER THAT IN THIS MODE PADS ARE AVAILABLE FOR A 8X8 LAYOUT OF A PLAYBACK BUTTON PAGE**
-- **REMEMBER THAT IN THIS MODE PADS ARE AVAILABLE FOR A 8X8 LAYOUT OF A PLAYBACK BUTTON PAGE**
-- **REMEMBER THAT IN THIS MODE PADS ARE AVAILABLE FOR A 8X8 LAYOUT OF A PLAYBACK BUTTON PAGE**
+- **In this mode pads are mapped as an 8x8 playback button page in ONYX**
 
 ### KEYBOARD Mode (keypad/command mode)
 - **Activate with:** `SHIFT` (Scene Launch 7) + `Scene Launch 1` (top left)
@@ -143,16 +159,17 @@ Colors are set according to AKAI velocity values, see details in `led_memory.py`
 
 ## Troubleshooting
 
-- **Controller not found?**  
+- **Controller not found?**
   - Check that the correct port is selected at script startup.
   - Close Ableton/other DAWs that might block the APC.
-- **LEDs not lighting up?**  
+- **LEDs not lighting up?**
   - Make sure you selected the correct OUT port to APC mini mk2 at startup.
-- **OSC not working?**  
-  - Double-check the IP/port for Onyx (default 8000) and ensure Onyx is listening on that port.
-- **Faders not working?**  
+- **OSC not working?**
+  - Double-check the IP/port for Onyx (`10.0.0.100:8000`), and ensure Onyx is listening on that port.
+  - Make sure your loopback adapter is set up as above.
+- **Faders not working?**
   - Verify the correct MIDI ports are selected for Onyx.
-- **loopMIDI not transmitting?**  
+- **loopMIDI not transmitting?**
   - Check connection and correct assignment in Onyx and the script.
 
 ---
