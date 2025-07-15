@@ -53,13 +53,13 @@ def handle_pad_press(
 
     if note == BLACKOUT_ON_NOTE:
         osc_client.blackout(True)
-        print("🕶️ Blackout ON")
+        print("🕶️ Blackout OFF")
         update_led(BLACKOUT_ON_NOTE, "red", midi_out_apc, is_pad=False)
         return
 
     if note == BLACKOUT_OFF_NOTE:
         osc_client.blackout(False)
-        print("🕶️ Blackout OFF")
+        print("🕶️ Blackout ON")
         update_led(BLACKOUT_ON_NOTE, "off", midi_out_apc, is_pad=False)
         return
 
