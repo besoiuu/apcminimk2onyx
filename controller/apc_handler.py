@@ -1,21 +1,23 @@
 from controller.bank_manager import banca_curenta, increment_bank, decrement_bank
-from controller.led_memory import get_led_state, set_led_state, update_led
+from controller.led_memory import update_led
 from controller.onyx_handler import OnyxOSCClient
 
+# OSC client pentru comenzi la Onyx
 osc_client = OnyxOSCClient(ip="10.0.0.100", port=8000)
 
-SHIFT_NOTE = 0x7A
+# Note speciale de la APC
+SHIFT_NOTE       = 0x7A
 BLACKOUT_ON_NOTE = 118
-BLACKOUT_OFF_NOTE = 119
-BANK_UP_NOTE = 0x75
-BANK_DOWN_NOTE = 0x74
+BLACKOUT_OFF_NOTE= 119
+BANK_UP_NOTE     = 0x75
+BANK_DOWN_NOTE   = 0x74
 
-busk_led_state = {}  # note: state ("off", "green", "red")
-
+# Starea LED-urilor pentru pad-urile Busk (0–63)
+busk_led_state = {}
 
 def clear_busk_grid(midi_out_apc):
     """
-    Stinge toate pad-urile din grid (0-63) la intrarea/ieșirea din BUSK.
+    Resetează toate pad-urile Busk (0–63) la starea "off".
     """
     for pad in range(64):
         busk_led_state[pad] = "off"
@@ -31,88 +33,86 @@ def handle_pad_press(
     blackout_state=False,
 ):
     """
-    BUSK mode: Toggle verde/roșu pe grid 0-63. Restul butoanelor gestionează separat.
+    Busk Mode: toggle GO/RELEASE pe grid (0–63) și tratează butoane speciale.
     """
+    # Ignoră evenimente de release
     if velocity == 0:
         return
 
-    # ======== Funcții speciale ========
+    # Navigare bancă
     if note == BANK_DOWN_NOTE:
         decrement_bank()
-        osc_client.select_bank(banca_curenta)
+        # select_bank așteaptă index 1-based
+        osc_client.select_bank(banca_curenta + 1)
         clear_busk_grid(midi_out_apc)
         print(f"🔻 Bank - noua bancă: {banca_curenta}")
         return
 
     if note == BANK_UP_NOTE:
         increment_bank()
-        osc_client.select_bank(banca_curenta)
+        osc_client.select_bank(banca_curenta + 1)
         clear_busk_grid(midi_out_apc)
         print(f"🔺 Bank + noua bancă: {banca_curenta}")
         return
 
+    # Control blackout Onyx
     if note == BLACKOUT_ON_NOTE:
         osc_client.blackout(True)
-        print("🕶️ Blackout OFF")
-        update_led(BLACKOUT_ON_NOTE, "red", midi_out_apc, is_pad=False)
+        print("🕶️ Blackout ON")
+        update_led(BLACKOUT_ON_NOTE, "red", midi_out_apc)
         return
 
     if note == BLACKOUT_OFF_NOTE:
         osc_client.blackout(False)
-        print("🕶️ Blackout ON")
-        update_led(BLACKOUT_ON_NOTE, "off", midi_out_apc, is_pad=False)
+        print("🕶️ Blackout OFF")
+        update_led(BLACKOUT_ON_NOTE, "off", midi_out_apc)
         return
 
+    # SHIFT simplu: nu face nimic
     if note == SHIFT_NOTE:
         return
 
-    # ======== BUSK GRID TOGGLE (doar pentru pad-uri 0–63) =====
+    # Toggle grid pad (Busk Mode)
     if 0 <= note <= 63:
-        cur = busk_led_state.get(note, "off")
-        if cur in ("off", "red"):
-            new = "green"
-            osc_action = "go"
+        current = busk_led_state.get(note, "off")
+        if current in ("off", "red"):
+            new_state = "green"
+            action = "go"
         else:
-            new = "red"
-            osc_action = "release"
+            new_state = "red"
+            action = "release"
 
-        busk_led_state[note] = new
-        update_led(note, new, midi_out_apc)
+        busk_led_state[note] = new_state
+        update_led(note, new_state, midi_out_apc)
 
-        # OSC logic identic cu ce aveai:
+        # Calculare index logical (0-based) și pagină
         col = note % 8
         row = note // 8
-        logical_note = (7 - row) * 8 + col + 1
-        note_real = logical_note + (banca_curenta * 64)
-        page_index = banca_curenta + 1
-        button_index = logical_note - 1
+        logical = (7 - row) * 8 + col
+        page = banca_curenta + 1
+        # Trimite OSC pentru go/release pe pagina curentă
         osc_client.client.send_message(
-            f"/Mx/playback/page{page_index}/{button_index}/{osc_action}", 1
+            f"/Mx/playback/page{page}/{logical}/{action}", 1
         )
-        midi_out_onyx.send_message([0x90, note_real - 1, velocity])
-
-        # print(f"[BUSK] Pad {note}: {cur} -> {new} (LED), OSC: page{page_index} btn{button_index} {osc_action}")
-        return
-
-    # ======== Track/Scene Buttons (optional, pentru restul butoanelor) ========
-    # Dacă vrei ca Track Buttons (0x64–0x6B) și Scene Launch (0x70–0x77) să fie roșii sau verzi, gestionezi aici separat.
-    # Exemplu:
-    if 0x64 <= note <= 0x6B:
-        # Track buttons: roșu ON
-        update_led(note, "red", midi_out_apc, is_pad=False)
-        return
-    if 0x70 <= note <= 0x77:
-        # Scene buttons: verde ON
-        update_led(note, "green", midi_out_apc, is_pad=False)
+        # Feedback LED Onyx (via MIDI) simultan
+        midi_out_onyx.send_message([0x90, note, 127 if action == "go" else 0])
+        print(f"[BUSK] Pad {note} -> {action} on page {page}, btn {logical}")
         return
 
 
 def handle_fader_message(cc, value, midi_out_onyx, osc_client):
     """
-    Gestionează mișcarea unui fader: trimite nivelul corespunzător către Onyx.
+    Gestionează mișcarea fader-elor: scalează și trimite OSC către Onyx.
     """
+    # Fadere playback 1–9 (CC48–CC56)
     if 48 <= cc <= 56:
-        scaled_level = int(value * 255 / 127)
-        playback_id = cc - 47
-        osc_client.set_playback_fader(playback_id=playback_id, level=scaled_level)
-        # print(f"[FADER] CC {cc} → poziție {value}, scalat: {scaled_level}, playback: {playback_id}")
+        scaled = int(value * 255 / 127)
+        playback_id = cc - 47  # CC48->1, ..., CC56->9
+        osc_client.set_playback_fader(playback_id=playback_id, level=scaled)
+        print(f"[FADER] CC {cc} -> nivel {scaled}, playback {playback_id}")
+    # Fader 10 (Master/Bank Swap) – CC57
+    elif cc == 57:
+        scaled = int(value * 255 / 127)
+        playback_id = 10
+        osc_client.set_playback_fader(playback_id=playback_id, level=scaled)
+        print(f"[FADER] CC {cc} -> nivel {scaled}, playback {playback_id}")
